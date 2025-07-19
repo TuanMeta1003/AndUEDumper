@@ -409,6 +409,11 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
     BufferFmt headersIncludeBuffer;
     headersIncludeBuffer.append("#pragma once\n\n");
 
+    // Danh sách tạm để gom thứ tự include hợp lý
+    std::vector<std::string> enumFiles;
+    std::vector<std::string> structFiles;
+    std::vector<std::string> classFiles;
+
     // Dump progress
     SimpleProgressBar dumpProgress(int(packages.size()));
     if (progressCallback)
@@ -435,11 +440,16 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             continue;
         }
 
-        // Thêm vào outBuffersMap bằng emplace để tránh lỗi copy/init-list
+        // Thêm vào outBuffersMap
         outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
 
-        // Include vào file Headers.hpp
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
+        // Phân loại để include theo thứ tự
+        if (!package.Enums.empty())
+            enumFiles.push_back(headerName);
+        else if (!package.Structures.empty())
+            structFiles.push_back(headerName);
+        else
+            classFiles.push_back(headerName);
 
         packages_saved++;
         classes_saved += package.Classes.size();
@@ -476,6 +486,14 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             }
         }
     }
+
+    // Include file theo thứ tự: Enums → Structs → Classes
+    for (const auto& file : enumFiles)
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
+    for (const auto& file : structFiles)
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
+    for (const auto& file : classFiles)
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
 
     // Cuối cùng thêm Headers.hpp (file include tất cả)
     outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
