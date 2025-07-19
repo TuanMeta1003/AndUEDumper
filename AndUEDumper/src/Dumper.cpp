@@ -397,34 +397,20 @@ void UEDumper::DumpAIOHeader(BufferFmt &logsBufferFmt, BufferFmt &aioBufferFmt, 
     logsBufferFmt.append("==========================\n");
 }
 
-void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages, const ProgressCallback& progressCallback)
+void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages)
 {
-    int packages_saved = 0;
-    std::string packages_unsaved{};
-    int classes_saved = 0;
-    int structs_saved = 0;
-    int enums_saved = 0;
-
     static bool processInternal_once = false;
 
     BufferFmt headersIncludeBuffer;
     headersIncludeBuffer.append("#pragma once\n\n");
 
-    std::vector<std::string> enumFiles;
-    std::vector<std::string> structFiles;
-    std::vector<std::string> classFiles;
-
     SimpleProgressBar dumpProgress(int(packages.size()));
-    if (progressCallback)
-        progressCallback(dumpProgress);
 
     for (UE_UPackage package : packages)
     {
         package.Process();
 
         dumpProgress++;
-        if (progressCallback)
-            progressCallback(dumpProgress);
 
         std::string name = package.GetObject().GetName();
         std::string headerName = name + ".hpp";
@@ -465,18 +451,7 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
         }
 
         outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
-
-        if (!package.Enums.empty())
-            enumFiles.push_back(headerName);
-        else if (!package.Structures.empty())
-            structFiles.push_back(headerName);
-        else
-            classFiles.push_back(headerName);
-
-        packages_saved++;
-        classes_saved += package.Classes.size();
-        structs_saved += package.Structures.size();
-        enums_saved += package.Enums.size();
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
 
         for (const auto& cls : package.Classes)
         {
@@ -506,14 +481,6 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             }
         }
     }
-
-    // Include theo thứ tự hợp lý
-    for (const auto& file : enumFiles)
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
-    for (const auto& file : structFiles)
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
-    for (const auto& file : classFiles)
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
 
     outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
 }
