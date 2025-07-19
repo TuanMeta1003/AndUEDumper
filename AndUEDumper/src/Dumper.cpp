@@ -404,12 +404,13 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
 
     SimpleProgressBar dumpProgress(int(packages.size()));
 
-    std::unordered_set<std::string> globalForwardSet;
-
-    for (UE_UPackage package : packages)
+    for (UE_UPackage& package : packages)
     {
         package.Process();
+    }
 
+    for (UE_UPackage& package : packages)
+    {
         std::string name = package.GetObject().GetName();
         std::string headerName = name + ".hpp";
         std::string fullPath = "Headers/" + headerName;
@@ -419,68 +420,12 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
         headerBuffer.append("#pragma once\n");
         headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
 
-        // ===== Forward Declarations =====
-        std::unordered_set<std::string> localForwardSet;
-
-        auto tryForward = [&](const std::string& rawType)
-        {
-            std::string type = rawType;
-            if (type.empty()) return;
-
-            // Skip built-in types
-            static const std::unordered_set<std::string> builtins = {
-                "int", "float", "double", "bool", "char",
-                "uint8_t", "uint16_t", "uint32_t", "uint64_t",
-                "int8_t", "int16_t", "int32_t", "int64_t",
-                "FString", "FName", "FText"
-            };
-
-            if (builtins.count(type)) return;
-
-            // Don't forward if already done globally
-            if (!globalForwardSet.insert(type).second) return;
-
-            // Remove * or & or const
-            if (auto pos = type.find("const "); pos != std::string::npos)
-                type = type.substr(pos + 6);
-            while (!type.empty() && (type.back() == '*' || type.back() == '&' || type.back() == ' ')) type.pop_back();
-
-            // Forward templates
-            if (type.find('<') != std::string::npos)
-            {
-                std::string tmpl = type.substr(0, type.find('<'));
-                if (tmpl.empty() || !globalForwardSet.insert(tmpl).second) return;
-                headerBuffer.append("template<typename...> struct {};\n", tmpl);
-                return;
-            }
-
-            // Guess kind
-            std::string decl = "struct";
-            if (type.starts_with("A") || type.starts_with("U"))
-                decl = "class";
-            else if (type.starts_with("E"))
-            {
-                if (type.find("::") != std::string::npos)
-                    decl = "enum class";
-                else
-                    decl = "enum";
-            }
-
-            headerBuffer.append("{} {};\n", decl, type);
-        };
-
-        for (const auto& st : package.Structures)
-        {
-            for (const auto& prop : st.Members)
-            {
-                tryForward(prop.Type);
-            }
-        }
-
-        headerBuffer.append("\n");
+        // Không còn forward declaration nữa
 
         if (!package.AppendToBuffer(&headerBuffer))
+        {
             continue;
+        }
 
         outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
         headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
