@@ -397,106 +397,122 @@ void UEDumper::DumpAIOHeader(BufferFmt &logsBufferFmt, BufferFmt &aioBufferFmt, 
 
 void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages)
 {
-    static bool processInternal_once = false;
+    static bool processInternal_once = false;
 
-    BufferFmt headersIncludeBuffer;
-    headersIncludeBuffer.append("#pragma once\n\n");
+    BufferFmt headersIncludeBuffer;
+    headersIncludeBuffer.append("#pragma once\n\n");
 
-    SimpleProgressBar dumpProgress(int(packages.size()));
+    SimpleProgressBar dumpProgress(int(packages.size()));
 
-    for (UE_UPackage package : packages)
-    {
-        package.Process();
+    std::unordered_set<std::string> globalForwardSet;
 
-        std::string name = package.GetObject().GetName();
-        std::string headerName = name + ".hpp";
-        std::string fullPath = headerName;
+    for (UE_UPackage package : packages)
+    {
+        package.Process();
 
-        BufferFmt headerBuffer;
+        std::string name = package.GetObject().GetName();
+        std::string headerName = name + ".hpp";
+        std::string fullPath = "Headers/" + headerName;
 
-        headerBuffer.append("#pragma once\n");
-        headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
+        BufferFmt headerBuffer;
 
-        // ===== Forward Declarations =====
-        std::unordered_set<std::string> forwardDeclared;
-        for (const auto& st : package.Structures)
-        {
-            for (const auto& prop : st.Members)
-            {
-                std::string type = prop.Type;
+        headerBuffer.append("#pragma once\n");
+        headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
 
-                // Strip trailing qualifiers
-                while (!type.empty() && (type.back() == '*' || type.back() == '&' || type.back() == ' '))
-                    type.pop_back();
+        // ===== Forward Declarations =====
+        std::unordered_set<std::string> localForwardSet;
 
-                // Skip primitive types
-                static const std::unordered_set<std::string> primitives = {
-                    "int", "float", "double", "bool", "char", "uint8_t", "int32_t", "int64_t", "uint32_t", "uint64_t", "FName", "FString"
-                };
-                if (primitives.count(type))
-                    continue;
+        auto tryForward = [&](const std::string& rawType)
+        {
+            std::string type = rawType;
+            if (type.empty()) return;
 
-                // If not yet declared
-                if (forwardDeclared.insert(type).second)
-                {
-                    if (type.find('<') != std::string::npos) // template type
-                    {
-                        headerBuffer.append("template<typename...> struct {};\n", type.substr(0, type.find('<')));
-                    }
-                    else if (type.rfind("enum ", 0) == 0)
-                    {
-                        headerBuffer.append("enum {};\n", type.substr(5));
-                    }
-                    else if (type.rfind("enum class ", 0) == 0)
-                    {
-                        headerBuffer.append("enum class {};\n", type.substr(11));
-                    }
-                    else
-                    {
-                        headerBuffer.append("struct {};\n", type);
-                    }
-                }
-            }
-        }
+            // Skip built-in types
+            static const std::unordered_set<std::string> builtins = {
+                "int", "float", "double", "bool", "char",
+                "uint8_t", "uint16_t", "uint32_t", "uint64_t",
+                "int8_t", "int16_t", "int32_t", "int64_t",
+                "FString", "FName", "FText"
+            };
 
-        headerBuffer.append("\n");
+            if (builtins.count(type)) return;
 
-        if (!package.AppendToBuffer(&headerBuffer))
-        {
-            continue;
-        }
+            // Don't forward if already done globally
+            if (!globalForwardSet.insert(type).second) return;
 
-        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
+            // Remove * or & or const
+            if (auto pos = type.find("const "); pos != std::string::npos)
+                type = type.substr(pos + 6);
+            while (!type.empty() && (type.back() == '*' || type.back() == '&' || type.back() == ' ')) type.pop_back();
 
-        for (const auto& cls : package.Classes)
-        {
-            for (const auto& func : cls.Functions)
-            {
-                if (!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ "UObject", "ProcessInternal", func.Func });
-                    processInternal_once = true;
-                }
+            // Forward templates
+            if (type.find('<') != std::string::npos)
+            {
+                std::string tmpl = type.substr(0, type.find('<'));
+                if (tmpl.empty() || !globalForwardSet.insert(tmpl).second) return;
+                headerBuffer.append("template<typename T> struct {};\n", tmpl);
+                return;
+            }
 
-                if ((func.EFlags & FUNC_Native) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ cls.Name, "exec" + func.Name, func.Func });
-                }
-            }
-        }
+            // Guess kind
+            std::string decl = "struct";
+            if (type.starts_with("A") || type.starts_with("U"))
+                decl = "class";
+            else if (type.starts_with("E"))
+            {
+                if (type.find("::") != std::string::npos)
+                    decl = "enum class";
+                else
+                    decl = "enum";
+            }
 
-        for (const auto& st : package.Structures)
-        {
-            for (const auto& func : st.Functions)
-            {
-                if ((func.EFlags & FUNC_Native) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
-                }
-            }
-        }
-    }
+            headerBuffer.append("{} {};\n", decl, type);
+        };
 
-    outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
+        for (const auto& st : package.Structures)
+        {
+            for (const auto& prop : st.Members)
+            {
+                tryForward(prop.Type);
+            }
+        }
+
+        headerBuffer.append("\n");
+
+        if (!package.AppendToBuffer(&headerBuffer))
+            continue;
+
+        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
+
+        for (const auto& cls : package.Classes)
+        {
+            for (const auto& func : cls.Functions)
+            {
+                if (!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
+                {
+                    dumper_jf_ns::jsonFunctions.push_back({ "UObject", "ProcessInternal", func.Func });
+                    processInternal_once = true;
+                }
+
+                if ((func.EFlags & FUNC_Native) && func.Func)
+                {
+                    dumper_jf_ns::jsonFunctions.push_back({ cls.Name, "exec" + func.Name, func.Func });
+                }
+            }
+        }
+
+        for (const auto& st : package.Structures)
+        {
+            for (const auto& func : st.Functions)
+            {
+                if ((func.EFlags & FUNC_Native) && func.Func)
+                {
+                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
+                }
+            }
+        }
+    }
+
+    outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
 }
