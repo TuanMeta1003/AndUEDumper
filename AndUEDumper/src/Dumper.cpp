@@ -423,7 +423,7 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             progressCallback(dumpProgress);
 
         std::string headerName = package.GetObject().GetName() + ".hpp";
-        std::string fullPath = "Headers/" + headerName;
+        std::string fullPath = headerName;
 
         BufferFmt headerBuffer;
         headerBuffer.append("#pragma once\n\n#include <cstdio>\n#include <string>\n#include <cstdint>\n\n");
