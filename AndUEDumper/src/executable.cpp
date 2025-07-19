@@ -197,7 +197,7 @@ int main(int argc, char **args)
     LOGI("==========================");
 
     std::string sDumpDir = sOutDirectory + "/UEDump3r";
-    std::string sDumpGameDir = sDumpDir + "/" + sGamePackage;
+    std::string sDumpGameDir = sDumpDir + "/" + sGamePackage + "/Headers";
     IOUtils::delete_directory(sDumpGameDir);
 
     if (IOUtils::mkdir_recursive(sDumpGameDir, 0777) == -1)
