@@ -397,121 +397,121 @@ void UEDumper::DumpAIOHeader(BufferFmt &logsBufferFmt, BufferFmt &aioBufferFmt, 
 
 void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages, const ProgressCallback& progressCallback)
 {
-    int packages_saved = 0;
-    std::string packages_unsaved{};
-    int classes_saved = 0;
-    int structs_saved = 0;
-    int enums_saved = 0;
+		int packages_saved = 0;
+		std::string packages_unsaved{};
+		int classes_saved = 0;
+		int structs_saved = 0;
+		int enums_saved = 0;
 
-    static bool processInternal_once = false;
+		static bool processInternal_once = false;
 
-    // Gom tất cả include Headers
-    BufferFmt headersIncludeBuffer;
-    headersIncludeBuffer.append("#pragma once\n\n");
+		// Gom tất cả include Headers
+		BufferFmt headersIncludeBuffer;
+		headersIncludeBuffer.append("#pragma once\n\n");
 
-    std::vector<std::string> enumFiles;
-    std::vector<std::string> structFiles;
-    std::vector<std::string> classFiles;
+		std::vector<std::string> enumFiles;
+		std::vector<std::string> structFiles;
+		std::vector<std::string> classFiles;
 
-    // Dump progress
-    SimpleProgressBar dumpProgress(int(packages.size()));
-    if (progressCallback)
-        progressCallback(dumpProgress);
+		// Dump progress
+		SimpleProgressBar dumpProgress(int(packages.size()));
+		if (progressCallback)
+				progressCallback(dumpProgress);
 
-    for (UE_UPackage package : packages)
-    {
-        package.Process();
+		for (UE_UPackage package : packages)
+		{
+				package.Process();
 
-        dumpProgress++;
-        if (progressCallback)
-            progressCallback(dumpProgress);
+				dumpProgress++;
+				if (progressCallback)
+						progressCallback(dumpProgress);
 
-        std::string name = package.GetObject().GetName();
-        std::string headerName = name + ".hpp";
-        std::string fullPath = headerName;
+				std::string name = package.GetObject().GetName();
+				std::string headerName = name + ".hpp";
+				std::string fullPath = "Headers/" + headerName;
 
-        BufferFmt headerBuffer;
+				BufferFmt headerBuffer;
 
-        headerBuffer.append("#pragma once\n");
-        headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
+				headerBuffer.append("#pragma once\n");
+				headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
 
-        // Dự đoán forward declaration nếu cần
-        for (const auto& st : package.Structures)
-        {
-            for (const auto& prop : st.Properties)
-            {
-                if (prop.CppType.find("class ") != std::string::npos || prop.CppType.find("struct ") != std::string::npos)
-                {
-                    // Thêm forward declaration đơn giản
-                    std::string type = prop.CppType;
-                    size_t space = type.find_last_of(' ');
-                    if (space != std::string::npos)
-                    {
-                        std::string forwardType = type.substr(0, space);
-                        std::string typeName = type.substr(space + 1);
-                        headerBuffer.append("{} {};\n", forwardType, typeName);
-                    }
-                }
-            }
-        }
+				// Dự đoán forward declaration nếu cần
+				for (const auto& st : package.Structures)
+				{
+						for (const auto& prop : st.Properties)
+						{
+								if (prop.CppType.find("class ") != std::string::npos || prop.CppType.find("struct ") != std::string::npos)
+								{
+										// Thêm forward declaration đơn giản
+										std::string type = prop.CppType;
+										size_t space = type.find_last_of(' ');
+										if (space != std::string::npos)
+										{
+												std::string forwardType = type.substr(0, space);
+												std::string typeName = type.substr(space + 1);
+												headerBuffer.append("{} {};\n", forwardType, typeName);
+										}
+								}
+						}
+				}
 
-        headerBuffer.append("\n");
+				headerBuffer.append("\n");
 
-        if (!package.AppendToBuffer(&headerBuffer))
-        {
-            packages_unsaved += "\t" + name + ",\n";
-            continue;
-        }
+				if (!package.AppendToBuffer(&headerBuffer))
+				{
+						packages_unsaved += "\t" + name + ",\n";
+						continue;
+				}
 
-        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
+				outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
 
-        if (!package.Enums.empty())
-            enumFiles.push_back(headerName);
-        else if (!package.Structures.empty())
-            structFiles.push_back(headerName);
-        else
-            classFiles.push_back(headerName);
+				if (!package.Enums.empty())
+						enumFiles.push_back(headerName);
+				else if (!package.Structures.empty())
+						structFiles.push_back(headerName);
+				else
+						classFiles.push_back(headerName);
 
-        packages_saved++;
-        classes_saved += package.Classes.size();
-        structs_saved += package.Structures.size();
-        enums_saved += package.Enums.size();
+				packages_saved++;
+				classes_saved += package.Classes.size();
+				structs_saved += package.Structures.size();
+				enums_saved += package.Enums.size();
 
-        for (const auto& cls : package.Classes)
-        {
-            for (const auto& func : cls.Functions)
-            {
-                if (!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ "UObject", "ProcessInternal", func.Func });
-                    processInternal_once = true;
-                }
-                if ((func.EFlags & FUNC_Native) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ cls.Name, "exec" + func.Name, func.Func });
-                }
-            }
-        }
+				for (const auto& cls : package.Classes)
+				{
+						for (const auto& func : cls.Functions)
+						{
+								if (!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
+								{
+										dumper_jf_ns::jsonFunctions.push_back({ "UObject", "ProcessInternal", func.Func });
+										processInternal_once = true;
+								}
+								if ((func.EFlags & FUNC_Native) && func.Func)
+								{
+										dumper_jf_ns::jsonFunctions.push_back({ cls.Name, "exec" + func.Name, func.Func });
+								}
+						}
+				}
 
-        for (const auto& st : package.Structures)
-        {
-            for (const auto& func : st.Functions)
-            {
-                if ((func.EFlags & FUNC_Native) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
-                }
-            }
-        }
-    }
+				for (const auto& st : package.Structures)
+				{
+						for (const auto& func : st.Functions)
+						{
+								if ((func.EFlags & FUNC_Native) && func.Func)
+								{
+										dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
+								}
+						}
+				}
+		}
 
-    // Include theo thứ tự hợp lý
-    for (const auto& file : enumFiles)
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
-    for (const auto& file : structFiles)
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
-    for (const auto& file : classFiles)
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
+		// Include theo thứ tự hợp lý
+		for (const auto& file : enumFiles)
+				headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
+		for (const auto& file : structFiles)
+				headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
+		for (const auto& file : classFiles)
+				headersIncludeBuffer.append("#include \"Headers/{}\"\n", file);
 
-    outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
+		outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
 }
