@@ -24,7 +24,6 @@ class UEDumper
     std::function<void(bool)> _dumpOffsetsInfoNotify;
     ProgressCallback _objectsProgressCallback;
     ProgressCallback _dumpProgressCallback;
-    ProgressCallback _headerProgressCallback;
 
 public:
     UEDumper() : _profile(nullptr), _dumpExeInfoNotify(nullptr), _dumpNamesInfoNotify(nullptr), _dumpObjectsInfoNotify(nullptr), _objectsProgressCallback(nullptr), _dumpProgressCallback(nullptr) {}
@@ -58,5 +57,5 @@ private:
 
     void DumpAIOHeader(BufferFmt &logsBufferFmt, BufferFmt &aioBufferFmt, UEPackagesArray &packages, const ProgressCallback &progressCallback);
     
-    void DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages, const ProgressCallback& progressCallback);
+    void DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages);
 };
