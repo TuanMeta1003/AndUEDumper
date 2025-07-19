@@ -402,33 +402,23 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
     BufferFmt headersIncludeBuffer;
     headersIncludeBuffer.append("#pragma once\n\n");
 
-    SimpleProgressBar dumpProgress(int(packages.size()));
-
-    for (UE_UPackage& package : packages)
+    for (UE_UPackage package : packages)
     {
         package.Process();
-    }
 
-    for (UE_UPackage& package : packages)
-    {
         std::string name = package.GetObject().GetName();
         std::string headerName = name + ".hpp";
-        std::string fullPath = "Headers/" + headerName;
+        std::string fullPath = headerName;
 
         BufferFmt headerBuffer;
 
         headerBuffer.append("#pragma once\n");
         headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
 
-        // Không còn forward declaration nữa
-
         if (!package.AppendToBuffer(&headerBuffer))
-        {
             continue;
-        }
 
         outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
 
         for (const auto& cls : package.Classes)
         {
@@ -457,6 +447,9 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
                 }
             }
         }
+
+        // Include tất cả header file của package đã append
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
     }
 
     outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
