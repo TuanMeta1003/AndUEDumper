@@ -408,8 +408,6 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
     {
         package.Process();
 
-        dumpProgress++;
-
         std::string name = package.GetObject().GetName();
         std::string headerName = name + ".hpp";
         std::string fullPath = headerName;
@@ -444,7 +442,6 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
 
         if (!package.AppendToBuffer(&headerBuffer))
         {
-            packages_unsaved += "\t" + name + ",\n";
             continue;
         }
 
