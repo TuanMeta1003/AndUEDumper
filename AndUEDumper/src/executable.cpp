@@ -197,10 +197,10 @@ int main(int argc, char **args)
     LOGI("==========================");
 
     std::string sDumpDir = sOutDirectory + "/UEDump3r";
-    std::string sDumpGameDir = sDumpDir + "/" + sGamePackage + "/Headers";
+    std::string sDumpGameDir = sDumpDir + "/" + sGamePackage;
     IOUtils::delete_directory(sDumpGameDir);
 
-    if (IOUtils::mkdir_recursive(sDumpGameDir, 0777) == -1)
+    if (IOUtils::mkdir_recursive(sDumpGameDir + "/Headers", 0777) == -1)
     {
         int err = errno;
         LOGE("Couldn't create Output Directory [\"%s\"] error=%d | %s.", sDumpDir.c_str(), err, strerror(err));
