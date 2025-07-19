@@ -1,0 +1,43 @@
+name: Build Android Library
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Download and Install NDK
+        run: |
+          export NDK_VERSION=24.0.8215888
+          sdkmanager "ndk;$NDK_VERSION"
+          echo "NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> $GITHUB_ENV
+          echo "NDK Installed at: $ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+
+      - name: Install Make and CMake
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make cmake
+          make --version || echo "Failed to install make"
+          cmake --version || echo "Failed to install cmake"
+
+      - name: Build Android Library
+        run: |
+          cd AndUEDumper
+          make clean && make
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AndUEDumper
+          path: AndUEDumper/libs/*
