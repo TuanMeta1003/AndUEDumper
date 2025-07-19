@@ -397,122 +397,122 @@ void UEDumper::DumpAIOHeader(BufferFmt &logsBufferFmt, BufferFmt &aioBufferFmt, 
 
 void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages)
 {
-    static bool processInternal_once = false;
+    static bool processInternal_once = false;
 
-    BufferFmt headersIncludeBuffer;
-    headersIncludeBuffer.append("#pragma once\n\n");
+    BufferFmt headersIncludeBuffer;
+    headersIncludeBuffer.append("#pragma once\n\n");
 
-    SimpleProgressBar dumpProgress(int(packages.size()));
+    SimpleProgressBar dumpProgress(int(packages.size()));
 
-    std::unordered_set<std::string> globalForwardSet;
+    std::unordered_set<std::string> globalForwardSet;
 
-    for (UE_UPackage package : packages)
-    {
-        package.Process();
+    for (UE_UPackage package : packages)
+    {
+        package.Process();
 
-        std::string name = package.GetObject().GetName();
-        std::string headerName = name + ".hpp";
-        std::string fullPath = "Headers/" + headerName;
+        std::string name = package.GetObject().GetName();
+        std::string headerName = name + ".hpp";
+        std::string fullPath = "Headers/" + headerName;
 
-        BufferFmt headerBuffer;
+        BufferFmt headerBuffer;
 
-        headerBuffer.append("#pragma once\n");
-        headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
+        headerBuffer.append("#pragma once\n");
+        headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
 
-        // ===== Forward Declarations =====
-        std::unordered_set<std::string> localForwardSet;
+        // ===== Forward Declarations =====
+        std::unordered_set<std::string> localForwardSet;
 
-        auto tryForward = [&](const std::string& rawType)
-        {
-            std::string type = rawType;
-            if (type.empty()) return;
+        auto tryForward = [&](const std::string& rawType)
+        {
+            std::string type = rawType;
+            if (type.empty()) return;
 
-            // Skip built-in types
-            static const std::unordered_set<std::string> builtins = {
-                "int", "float", "double", "bool", "char",
-                "uint8_t", "uint16_t", "uint32_t", "uint64_t",
-                "int8_t", "int16_t", "int32_t", "int64_t",
-                "FString", "FName", "FText"
-            };
+            // Skip built-in types
+            static const std::unordered_set<std::string> builtins = {
+                "int", "float", "double", "bool", "char",
+                "uint8_t", "uint16_t", "uint32_t", "uint64_t",
+                "int8_t", "int16_t", "int32_t", "int64_t",
+                "FString", "FName", "FText"
+            };
 
-            if (builtins.count(type)) return;
+            if (builtins.count(type)) return;
 
-            // Don't forward if already done globally
-            if (!globalForwardSet.insert(type).second) return;
+            // Don't forward if already done globally
+            if (!globalForwardSet.insert(type).second) return;
 
-            // Remove * or & or const
-            if (auto pos = type.find("const "); pos != std::string::npos)
-                type = type.substr(pos + 6);
-            while (!type.empty() && (type.back() == '*' || type.back() == '&' || type.back() == ' ')) type.pop_back();
+            // Remove * or & or const
+            if (auto pos = type.find("const "); pos != std::string::npos)
+                type = type.substr(pos + 6);
+            while (!type.empty() && (type.back() == '*' || type.back() == '&' || type.back() == ' ')) type.pop_back();
 
-            // Forward templates
-            if (type.find('<') != std::string::npos)
-            {
-                std::string tmpl = type.substr(0, type.find('<'));
-                if (tmpl.empty() || !globalForwardSet.insert(tmpl).second) return;
-                headerBuffer.append("template<typename T> struct {};\n", tmpl);
-                return;
-            }
+            // Forward templates
+            if (type.find('<') != std::string::npos)
+            {
+                std::string tmpl = type.substr(0, type.find('<'));
+                if (tmpl.empty() || !globalForwardSet.insert(tmpl).second) return;
+                headerBuffer.append("template<typename...> struct {};\n", tmpl);
+                return;
+            }
 
-            // Guess kind
-            std::string decl = "struct";
-            if (type.starts_with("A") || type.starts_with("U"))
-                decl = "class";
-            else if (type.starts_with("E"))
-            {
-                if (type.find("::") != std::string::npos)
-                    decl = "enum class";
-                else
-                    decl = "enum";
-            }
+            // Guess kind
+            std::string decl = "struct";
+            if (type.starts_with("A") || type.starts_with("U"))
+                decl = "class";
+            else if (type.starts_with("E"))
+            {
+                if (type.find("::") != std::string::npos)
+                    decl = "enum class";
+                else
+                    decl = "enum";
+            }
 
-            headerBuffer.append("{} {};\n", decl, type);
-        };
+            headerBuffer.append("{} {};\n", decl, type);
+        };
 
-        for (const auto& st : package.Structures)
-        {
-            for (const auto& prop : st.Members)
-            {
-                tryForward(prop.Type);
-            }
-        }
+        for (const auto& st : package.Structures)
+        {
+            for (const auto& prop : st.Members)
+            {
+                tryForward(prop.Type);
+            }
+        }
 
-        headerBuffer.append("\n");
+        headerBuffer.append("\n");
 
-        if (!package.AppendToBuffer(&headerBuffer))
-            continue;
+        if (!package.AppendToBuffer(&headerBuffer))
+            continue;
 
-        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
-        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
+        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
 
-        for (const auto& cls : package.Classes)
-        {
-            for (const auto& func : cls.Functions)
-            {
-                if (!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ "UObject", "ProcessInternal", func.Func });
-                    processInternal_once = true;
-                }
+        for (const auto& cls : package.Classes)
+        {
+            for (const auto& func : cls.Functions)
+            {
+                if (!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
+                {
+                    dumper_jf_ns::jsonFunctions.push_back({ "UObject", "ProcessInternal", func.Func });
+                    processInternal_once = true;
+                }
 
-                if ((func.EFlags & FUNC_Native) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ cls.Name, "exec" + func.Name, func.Func });
-                }
-            }
-        }
+                if ((func.EFlags & FUNC_Native) && func.Func)
+                {
+                    dumper_jf_ns::jsonFunctions.push_back({ cls.Name, "exec" + func.Name, func.Func });
+                }
+            }
+        }
 
-        for (const auto& st : package.Structures)
-        {
-            for (const auto& func : st.Functions)
-            {
-                if ((func.EFlags & FUNC_Native) && func.Func)
-                {
-                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
-                }
-            }
-        }
-    }
+        for (const auto& st : package.Structures)
+        {
+            for (const auto& func : st.Functions)
+            {
+                if ((func.EFlags & FUNC_Native) && func.Func)
+                {
+                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
+                }
+            }
+        }
+    }
 
-    outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
+    outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
 }
