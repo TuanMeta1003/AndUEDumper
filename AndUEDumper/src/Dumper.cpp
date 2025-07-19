@@ -1,8 +1,6 @@
 #include "Dumper.hpp"
 
 #include <fmt/format.h>
-#include <unordered_map>
-#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -100,7 +98,7 @@ bool UEDumper::Dump(std::unordered_map<std::string, BufferFmt> *outBuffersMap)
     BufferFmt &aioBufferFmt = outBuffersMap->at("AIOHeader.hpp");
     DumpAIOHeader(logsBufferFmt, aioBufferFmt, packages, _dumpProgressCallback);
 
-    DumpSeparatedHeaders(outBuffersMap, packages, _headerProgressCallback);
+    DumpSeparatedHeaders(outBuffersMap, packages);
 
     dumper_jf_ns::base_address = _profile->GetUnrealELF().base();
     if (dumper_jf_ns::jsonFunctions.size())
