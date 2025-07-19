@@ -404,13 +404,27 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
 
     SimpleProgressBar dumpProgress(int(packages.size()));
 
-    for (UE_UPackage package : packages)
+    // Mapping type → kind (struct/class/enum/enum class)
+    std::unordered_map<std::string, std::string> typeKindMap;
+
+    for (UE_UPackage& package : packages)
     {
         package.Process();
 
+        // Thu thập loại dữ liệu
+        for (const auto& s : package.Structures)      typeKindMap[s.Name] = "struct";
+        for (const auto& c : package.Classes)         typeKindMap[c.Name] = "class";
+        for (const auto& e : package.Enums)
+        {
+            typeKindMap[e.Name] = e.IsEnumClass ? "enum class" : "enum";
+        }
+    }
+
+    for (UE_UPackage& package : packages)
+    {
         std::string name = package.GetObject().GetName();
         std::string headerName = name + ".hpp";
-        std::string fullPath = headerName;
+        std::string fullPath = "Headers/" + headerName;
 
         BufferFmt headerBuffer;
 
@@ -419,22 +433,45 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
 
         // ===== Forward Declarations =====
         std::unordered_set<std::string> forwardDeclared;
+
+        auto tryForwardType = [&](const std::string& rawType)
+        {
+            // Bỏ qua primitive
+            static const std::unordered_set<std::string> primitives = {
+                "int", "float", "double", "bool", "char", "uint8_t", "int32_t", "int64_t", "void"
+            };
+            if (primitives.count(rawType)) return;
+
+            // Loại bỏ template như TArray<FName>
+            size_t anglePos = rawType.find('<');
+            std::string type = (anglePos != std::string::npos) ? rawType.substr(0, anglePos) : rawType;
+
+            // Nếu bên trong <...>, cũng thử forward nó
+            if (anglePos != std::string::npos)
+            {
+                size_t closePos = rawType.rfind('>');
+                if (closePos != std::string::npos && closePos > anglePos + 1)
+                {
+                    std::string innerType = rawType.substr(anglePos + 1, closePos - anglePos - 1);
+                    tryForwardType(innerType);
+                }
+            }
+
+            // Nếu đã khai báo thì bỏ qua
+            if (!forwardDeclared.insert(type).second) return;
+
+            // Nếu biết loại thật thì forward đúng
+            if (auto it = typeKindMap.find(type); it != typeKindMap.end())
+            {
+                headerBuffer.append("{} {};\n", it->second, type);
+            }
+        };
+
         for (const auto& st : package.Structures)
         {
             for (const auto& prop : st.Members)
             {
-                const std::string& type = prop.Type;
-
-                // Heuristic: If the type is not primitive and doesn't contain '<', treat it as user-defined
-                if (type != "int" && type != "float" && type != "double" &&
-                    type != "bool" && type != "char" && type != "uint8_t" &&
-                    type != "int32_t" && type != "int64_t" && type.find('<') == std::string::npos)
-                {
-                    if (forwardDeclared.insert(type).second)
-                    {
-                        headerBuffer.append("struct {};\n", type);
-                    }
-                }
+                tryForwardType(prop.Type);
             }
         }
 
