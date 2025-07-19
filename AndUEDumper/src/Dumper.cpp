@@ -404,89 +404,56 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
 
     SimpleProgressBar dumpProgress(int(packages.size()));
 
-    // Mapping type → kind (struct/class/enum/enum class)
-    std::unordered_map<std::string, std::string> typeKindMap;
-
-    for (UE_UPackage& package : packages)
+    for (UE_UPackage package : packages)
     {
         package.Process();
 
-        for (const auto& s : package.Structures)      typeKindMap[s.Name] = "struct";
-        for (const auto& c : package.Classes)         typeKindMap[c.Name] = "class";
-        for (const auto& e : package.Enums)
-            typeKindMap[e.Name] = e.IsEnumClass ? "enum class" : "enum";
-    }
-
-    for (UE_UPackage& package : packages)
-    {
         std::string name = package.GetObject().GetName();
         std::string headerName = name + ".hpp";
-        std::string fullPath = "Headers/" + headerName;
+        std::string fullPath = headerName;
 
         BufferFmt headerBuffer;
 
         headerBuffer.append("#pragma once\n");
         headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
 
+        // ===== Forward Declarations =====
         std::unordered_set<std::string> forwardDeclared;
-
         for (const auto& st : package.Structures)
         {
             for (const auto& prop : st.Members)
             {
-                std::string rawType = prop.Type;
+                std::string type = prop.Type;
 
+                // Strip trailing qualifiers
+                while (!type.empty() && (type.back() == '*' || type.back() == '&' || type.back() == ' '))
+                    type.pop_back();
+
+                // Skip primitive types
                 static const std::unordered_set<std::string> primitives = {
-                    "int", "float", "double", "bool", "char", "uint8_t", "int32_t", "int64_t", "void"
+                    "int", "float", "double", "bool", "char", "uint8_t", "int32_t", "int64_t", "uint32_t", "uint64_t", "FName", "FString"
                 };
+                if (primitives.count(type))
+                    continue;
 
-                // Loại bỏ *, &, const
-                std::string cleanedType = rawType;
-                while (!cleanedType.empty() && (cleanedType.back() == '*' || cleanedType.back() == '&'))
-                    cleanedType.pop_back();
-
-                // Nếu là template
-                size_t anglePos = cleanedType.find('<');
-                if (anglePos != std::string::npos)
+                // If not yet declared
+                if (forwardDeclared.insert(type).second)
                 {
-                    std::string outerType = cleanedType.substr(0, anglePos);
-                    std::string innerTypes = cleanedType.substr(anglePos + 1, cleanedType.rfind('>') - anglePos - 1);
-
-                    if (forwardDeclared.insert(outerType).second)
+                    if (type.find('<') != std::string::npos) // template type
                     {
-                        headerBuffer.append("template <typename...> struct {};\n", outerType);
+                        headerBuffer.append("template<typename...> struct {};\n", type.substr(0, type.find('<')));
                     }
-
-                    // Tách các inner types theo dấu phẩy
-                    std::stringstream ss(innerTypes);
-                    std::string item;
-                    while (std::getline(ss, item, ','))
+                    else if (type.rfind("enum ", 0) == 0)
                     {
-                        item.erase(0, item.find_first_not_of(" \t"));
-                        item.erase(item.find_last_not_of(" \t") + 1);
-                        if (!item.empty() && !primitives.count(item))
-                        {
-                            if (forwardDeclared.insert(item).second)
-                            {
-                                if (auto it = typeKindMap.find(item); it != typeKindMap.end())
-                                    headerBuffer.append("{} {};\n", it->second, item);
-                                else if (item.starts_with("T") || item.starts_with("F"))
-                                    headerBuffer.append("struct {};\n", item);
-                            }
-                        }
+                        headerBuffer.append("enum {};\n", type.substr(5));
                     }
-                }
-                else
-                {
-                    if (!cleanedType.empty() && !primitives.count(cleanedType))
+                    else if (type.rfind("enum class ", 0) == 0)
                     {
-                        if (forwardDeclared.insert(cleanedType).second)
-                        {
-                            if (auto it = typeKindMap.find(cleanedType); it != typeKindMap.end())
-                                headerBuffer.append("{} {};\n", it->second, cleanedType);
-                            else if (cleanedType.starts_with("T") || cleanedType.starts_with("F"))
-                                headerBuffer.append("struct {};\n", cleanedType);
-                        }
+                        headerBuffer.append("enum class {};\n", type.substr(11));
+                    }
+                    else
+                    {
+                        headerBuffer.append("struct {};\n", type);
                     }
                 }
             }
@@ -495,9 +462,11 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
         headerBuffer.append("\n");
 
         if (!package.AppendToBuffer(&headerBuffer))
+        {
             continue;
+        }
 
-        outBuffersMap->emplace(fullPath, std::move(headerBuffer));
+        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
         headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
 
         for (const auto& cls : package.Classes)
@@ -517,13 +486,13 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             }
         }
 
-        for (const auto& st2 : package.Structures)
+        for (const auto& st : package.Structures)
         {
-            for (const auto& func : st2.Functions)
+            for (const auto& func : st.Functions)
             {
                 if ((func.EFlags & FUNC_Native) && func.Func)
                 {
-                    dumper_jf_ns::jsonFunctions.push_back({ st2.Name, "exec" + func.Name, func.Func });
+                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
                 }
             }
         }
