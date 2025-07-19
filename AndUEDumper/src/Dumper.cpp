@@ -1,6 +1,8 @@
 #include "Dumper.hpp"
 
 #include <fmt/format.h>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
