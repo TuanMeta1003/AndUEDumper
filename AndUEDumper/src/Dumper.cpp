@@ -98,6 +98,8 @@ bool UEDumper::Dump(std::unordered_map<std::string, BufferFmt> *outBuffersMap)
     BufferFmt &aioBufferFmt = outBuffersMap->at("AIOHeader.hpp");
     DumpAIOHeader(logsBufferFmt, aioBufferFmt, packages, _dumpProgressCallback);
 
+    DumpSeparatedHeaders(outBuffersMap, packages, _headerProgressCallback);
+
     dumper_jf_ns::base_address = _profile->GetUnrealELF().base();
     if (dumper_jf_ns::jsonFunctions.size())
     {
@@ -391,4 +393,89 @@ void UEDumper::DumpAIOHeader(BufferFmt &logsBufferFmt, BufferFmt &aioBufferFmt, 
     }
 
     logsBufferFmt.append("==========================\n");
+}
+
+void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* outBuffersMap, UEPackagesArray& packages, const ProgressCallback& progressCallback)
+{
+    int packages_saved = 0;
+    std::string packages_unsaved{};
+    int classes_saved = 0;
+    int structs_saved = 0;
+    int enums_saved = 0;
+
+    static bool processInternal_once = false;
+
+    // Buffer để gom file include
+    BufferFmt headersIncludeBuffer;
+    headersIncludeBuffer.append("#pragma once\n\n");
+
+    // Dump progress
+    SimpleProgressBar dumpProgress(int(packages.size()));
+    if (progressCallback)
+        progressCallback(dumpProgress);
+
+    for (UE_UPackage package : packages)
+    {
+        package.Process();
+
+        dumpProgress++;
+        if (progressCallback)
+            progressCallback(dumpProgress);
+
+        std::string headerName = package.GetObject().GetName() + ".hpp";
+        std::string fullPath = "Headers/" + headerName;
+
+        BufferFmt headerBuffer;
+        headerBuffer.append("#pragma once\n\n#include <cstdio>\n#include <string>\n#include <cstdint>\n\n");
+
+        if (!package.AppendToBuffer(&headerBuffer))
+        {
+            packages_unsaved += "\t";
+            packages_unsaved += (package.GetObject().GetName() + ",\n");
+            continue;
+        }
+
+        // Ghi vào outBuffersMap
+        outBuffersMap->insert({fullPath, headerBuffer});
+        headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
+
+        packages_saved++;
+        classes_saved += package.Classes.size();
+        structs_saved += package.Structures.size();
+        enums_saved += package.Enums.size();
+
+        for (const auto& cls : package.Classes)
+        {
+            for (const auto& func : cls.Functions)
+            {
+                if (!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
+                {
+                    dumper_jf_ns::jsonFunctions.push_back({ "UObject", "ProcessInternal", func.Func });
+                    processInternal_once = true;
+                }
+
+                if ((func.EFlags & FUNC_Native) && func.Func)
+                {
+                    std::string execFuncName = "exec";
+                    execFuncName += func.Name;
+                    dumper_jf_ns::jsonFunctions.push_back({ cls.Name, execFuncName, func.Func });
+                }
+            }
+        }
+
+        for (const auto& st : package.Structures)
+        {
+            for (const auto& func : st.Functions)
+            {
+                if ((func.EFlags & FUNC_Native) && func.Func)
+                {
+                    std::string execFuncName = "exec";
+                    execFuncName += func.Name;
+                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, execFuncName, func.Func });
+                }
+            }
+        }
+    }
+
+    outBuffersMap->insert({ "Headers.hpp", headersIncludeBuffer });
 }
