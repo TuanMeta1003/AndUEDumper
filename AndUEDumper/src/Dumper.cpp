@@ -435,8 +435,10 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             continue;
         }
 
-        // Ghi vào outBuffersMap
-        outBuffersMap->insert({fullPath, headerBuffer});
+        // Thêm vào outBuffersMap bằng emplace để tránh lỗi copy/init-list
+        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
+
+        // Include vào file Headers.hpp
         headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
 
         packages_saved++;
@@ -456,8 +458,7 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
 
                 if ((func.EFlags & FUNC_Native) && func.Func)
                 {
-                    std::string execFuncName = "exec";
-                    execFuncName += func.Name;
+                    std::string execFuncName = "exec" + func.Name;
                     dumper_jf_ns::jsonFunctions.push_back({ cls.Name, execFuncName, func.Func });
                 }
             }
@@ -469,13 +470,13 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             {
                 if ((func.EFlags & FUNC_Native) && func.Func)
                 {
-                    std::string execFuncName = "exec";
-                    execFuncName += func.Name;
+                    std::string execFuncName = "exec" + func.Name;
                     dumper_jf_ns::jsonFunctions.push_back({ st.Name, execFuncName, func.Func });
                 }
             }
         }
     }
 
-    outBuffersMap->insert({ "Headers.hpp", headersIncludeBuffer });
+    // Cuối cùng thêm Headers.hpp (file include tất cả)
+    outBuffersMap->emplace("Headers.hpp", std::move(headersIncludeBuffer));
 }
