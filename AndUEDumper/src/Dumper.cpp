@@ -411,13 +411,10 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
     {
         package.Process();
 
-        // Thu thập loại dữ liệu
         for (const auto& s : package.Structures)      typeKindMap[s.Name] = "struct";
         for (const auto& c : package.Classes)         typeKindMap[c.Name] = "class";
         for (const auto& e : package.Enums)
-        {
             typeKindMap[e.Name] = e.IsEnumClass ? "enum class" : "enum";
-        }
     }
 
     for (UE_UPackage& package : packages)
@@ -431,58 +428,76 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
         headerBuffer.append("#pragma once\n");
         headerBuffer.append("#include <cstdint>\n#include <string>\n#include <vector>\n#include <array>\n\n");
 
-        // ===== Forward Declarations =====
         std::unordered_set<std::string> forwardDeclared;
-
-        auto tryForwardType = [&](const std::string& rawType)
-        {
-            // Bỏ qua primitive
-            static const std::unordered_set<std::string> primitives = {
-                "int", "float", "double", "bool", "char", "uint8_t", "int32_t", "int64_t", "void"
-            };
-            if (primitives.count(rawType)) return;
-
-            // Loại bỏ template như TArray<FName>
-            size_t anglePos = rawType.find('<');
-            std::string type = (anglePos != std::string::npos) ? rawType.substr(0, anglePos) : rawType;
-
-            // Nếu bên trong <...>, cũng thử forward nó
-            if (anglePos != std::string::npos)
-            {
-                size_t closePos = rawType.rfind('>');
-                if (closePos != std::string::npos && closePos > anglePos + 1)
-                {
-                    std::string innerType = rawType.substr(anglePos + 1, closePos - anglePos - 1);
-                    tryForwardType(innerType);
-                }
-            }
-
-            // Nếu đã khai báo thì bỏ qua
-            if (!forwardDeclared.insert(type).second) return;
-
-            // Nếu biết loại thật thì forward đúng
-            if (auto it = typeKindMap.find(type); it != typeKindMap.end())
-            {
-                headerBuffer.append("{} {};\n", it->second, type);
-            }
-        };
 
         for (const auto& st : package.Structures)
         {
             for (const auto& prop : st.Members)
             {
-                tryForwardType(prop.Type);
+                std::string rawType = prop.Type;
+
+                static const std::unordered_set<std::string> primitives = {
+                    "int", "float", "double", "bool", "char", "uint8_t", "int32_t", "int64_t", "void"
+                };
+
+                // Loại bỏ *, &, const
+                std::string cleanedType = rawType;
+                while (!cleanedType.empty() && (cleanedType.back() == '*' || cleanedType.back() == '&'))
+                    cleanedType.pop_back();
+
+                // Nếu là template
+                size_t anglePos = cleanedType.find('<');
+                if (anglePos != std::string::npos)
+                {
+                    std::string outerType = cleanedType.substr(0, anglePos);
+                    std::string innerTypes = cleanedType.substr(anglePos + 1, cleanedType.rfind('>') - anglePos - 1);
+
+                    if (forwardDeclared.insert(outerType).second)
+                    {
+                        headerBuffer.append("template <typename...> struct {};\n", outerType);
+                    }
+
+                    // Tách các inner types theo dấu phẩy
+                    std::stringstream ss(innerTypes);
+                    std::string item;
+                    while (std::getline(ss, item, ','))
+                    {
+                        item.erase(0, item.find_first_not_of(" \t"));
+                        item.erase(item.find_last_not_of(" \t") + 1);
+                        if (!item.empty() && !primitives.count(item))
+                        {
+                            if (forwardDeclared.insert(item).second)
+                            {
+                                if (auto it = typeKindMap.find(item); it != typeKindMap.end())
+                                    headerBuffer.append("{} {};\n", it->second, item);
+                                else if (item.starts_with("T") || item.starts_with("F"))
+                                    headerBuffer.append("struct {};\n", item);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if (!cleanedType.empty() && !primitives.count(cleanedType))
+                    {
+                        if (forwardDeclared.insert(cleanedType).second)
+                        {
+                            if (auto it = typeKindMap.find(cleanedType); it != typeKindMap.end())
+                                headerBuffer.append("{} {};\n", it->second, cleanedType);
+                            else if (cleanedType.starts_with("T") || cleanedType.starts_with("F"))
+                                headerBuffer.append("struct {};\n", cleanedType);
+                        }
+                    }
+                }
             }
         }
 
         headerBuffer.append("\n");
 
         if (!package.AppendToBuffer(&headerBuffer))
-        {
             continue;
-        }
 
-        outBuffersMap->emplace(std::move(fullPath), std::move(headerBuffer));
+        outBuffersMap->emplace(fullPath, std::move(headerBuffer));
         headersIncludeBuffer.append("#include \"Headers/{}\"\n", headerName);
 
         for (const auto& cls : package.Classes)
@@ -502,13 +517,13 @@ void UEDumper::DumpSeparatedHeaders(std::unordered_map<std::string, BufferFmt>* 
             }
         }
 
-        for (const auto& st : package.Structures)
+        for (const auto& st2 : package.Structures)
         {
-            for (const auto& func : st.Functions)
+            for (const auto& func : st2.Functions)
             {
                 if ((func.EFlags & FUNC_Native) && func.Func)
                 {
-                    dumper_jf_ns::jsonFunctions.push_back({ st.Name, "exec" + func.Name, func.Func });
+                    dumper_jf_ns::jsonFunctions.push_back({ st2.Name, "exec" + func.Name, func.Func });
                 }
             }
         }
